@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loan Tracker (LIVE)</title>
+
+<style>
+body {font-family: Arial, sans-serif; background:#f4f6f8; padding:20px;}
+h1{text-align:center}
+.container{max-width:900px;margin:auto}
+.card{background:#fff;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #ddd;padding:8px;text-align:center}
+th{background:#1a73e8;color:#fff}
+.paid{color:green;font-weight:bold}
+button{padding:8px 14px;margin:4px;cursor:pointer;border-radius:4px;border:none}
+.add-button{background:#1a73e8;color:#fff}
+#adminForm,#adminControls{text-align:center}
+#addForm input{margin:4px 0;padding:6px;width:220px}
+#addForm label{display:block; margin-top:8px; font-weight:bold}
+</style>
+</head>
+
+<body>
+
+<h1>📋 Loan & Payment Dashboard (LIVE)</h1>
+
+<!-- ADMIN LOGIN -->
+<div id="adminForm">
+  <h2>Admin Login</h2>
+  <input id="adminUser" placeholder="Username"><br>
+  <input id="adminPass" type="password" placeholder="Password"><br><br>
+  <button class="add-button" id="loginBtn">Login</button>
+</div>
+
+<!-- ADMIN CONTROLS -->
+<div id="adminControls" style="display:none">
+  <button class="add-button" id="toggleBtn">Add Borrower</button>
+  <div id="addForm" style="display:none">
+    <label for="name">Borrower Name:</label>
+    <input id="name" placeholder="Borrower Name">
+
+    <label for="amount">Loan Amount (₱):</label>
+    <input id="amount" type="number" placeholder="Loan Amount">
+
+    <label for="months">Months to Pay:</label>
+    <input id="months" type="number" placeholder="Months to Pay">
+
+    <label for="release">Release Date:</label>
+    <input id="release" type="date">
+
+    <label for="startPayment">Start Payment Date:</label>
+    <input id="startPayment" type="date"><br><br>
+
+    <button class="add-button" id="saveBorrower">Save Borrower</button>
+  </div>
+</div>
+
+<div class="container" id="list"></div>
+
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+/* 🔥 FIREBASE CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyBzpiOc27Qy0125-Bq1mDC0e-A3wge4U0g",
+  authDomain: "liveproject-5205a.firebaseapp.com",
+  databaseURL: "https://liveproject-5205a-default-rtdb.firebaseio.com",
+  projectId: "liveproject-5205a",
+  storageBucket: "liveproject-5205a.appspot.com",
+  messagingSenderId: "616393341334",
+  appId: "1:616393341334:web:3a9681561c8c24a85385b7"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const borrowersRef = db.ref("borrowers");
+
+/* DOM */
+const adminForm = document.getElementById("adminForm");
+const adminControls = document.getElementById("adminControls");
+const addForm = document.getElementById("addForm");
+const list = document.getElementById("list");
+
+const adminUser = document.getElementById("adminUser");
+const adminPass = document.getElementById("adminPass");
+
+/* ADMIN */
+const ADMIN = { user:"Yuna@081724", pass:"Yuna@081724" };
+let isAdmin = false;
+
+/* LOGIN */
+document.getElementById("loginBtn").onclick = () => {
+  if(adminUser.value === ADMIN.user && adminPass.value === ADMIN.pass){
+    isAdmin = true;
+    adminForm.style.display = "none";
+    adminControls.style.display = "block";
+    renderList();
+  } else {
+    alert("Wrong login");
+  }
+};
+
+/* TOGGLE FORM */
+document.getElementById("toggleBtn").onclick = () => {
+  addForm.style.display = addForm.style.display === "none" ? "block" : "none";
+};
+
+/* ADD BORROWER */
+document.getElementById("saveBorrower").onclick = () => {
+  if(!isAdmin) return;
+
+  const name = document.getElementById("name").value.trim();
+  const amount = Number(document.getElementById("amount").value);
+  const months = Number(document.getElementById("months").value);
+  const release = document.getElementById("release").value;
+  const startPayment = document.getElementById("startPayment").value;
+
+  if(!name || !amount || !months || !release || !startPayment){
+    alert("Complete all fields");
+    return;
+  }
+
+  borrowersRef.push({
+    name, amount, months, release, startPayment,
+    paid: 0,
+    created: Date.now()
+  });
+
+  document.getElementById("name").value = "";
+  document.getElementById("amount").value = "";
+  document.getElementById("months").value = "";
+  document.getElementById("release").value = "";
+  document.getElementById("startPayment").value = "";
+};
+
+/* RENDER */
+function renderList(){
+  borrowersRef.once("value", snap => draw(snap.val()));
+}
+
+borrowersRef.on("value", snap => draw(snap.val()));
+
+/* HELPER: get first 5th or 20th after start date */
+function getFirstPaymentDate(start) {
+  const d = new Date(start);
+  const day = d.getDate();
+  if(day <= 5) d.setDate(5);
+  else if(day <= 20) d.setDate(20);
+  else d.setMonth(d.getMonth()+1,5); // next month 5th
+  return d;
+}
+
+/* HELPER: generate all payment dates correctly */
+function generatePaymentDates(startDate, months) {
+  const dates = [];
+  let current = getFirstPaymentDate(startDate);
+
+  for (let i = 0; i < months*2; i++) {
+    dates.push(new Date(current));
+
+    // alternate 5th → 20th → next month 5th
+    if(current.getDate() === 5) {
+      current.setDate(20);
+    } else {
+      current.setMonth(current.getMonth() + 1);
+      current.setDate(5);
+    }
+  }
+  return dates;
+}
+
+function draw(data){
+  list.innerHTML = "";
+  if(!data) return;
+
+  Object.entries(data).forEach(([id,b])=>{
+    const total = b.amount + (b.amount * 0.05 * b.months);
+    const monthly = total / b.months;
+    const half = monthly / 2;
+
+    const startDate = new Date(b.startPayment);
+    const paymentDates = generatePaymentDates(startDate, b.months);
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.innerHTML = `
+      <h3>${b.name}</h3>
+      <p><b>Loan Amount:</b> ₱${b.amount}</p>
+      <p><b>Months:</b> ${b.months}</p>
+      <p><b>Release Date:</b> ${b.release}</p>
+      <p><b>Start Payment Date:</b> ${b.startPayment}</p>
+      <p><b>Interest:</b> 5% monthly</p>
+      <p><b>Total w/ Interest:</b> ₱${total.toFixed(2)}</p>
+
+      <table>
+        <tr><th>Payment Date</th><th>Amount</th><th>Status</th></tr>
+        ${paymentDates.map((date,i)=>{
+          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `
+            <tr>
+              <td>${dateStr}</td>
+              <td>₱${half.toFixed(2)}</td>
+              <td>${i < b.paid ? "<span class='paid'>PAID</span>" : (isAdmin ? `<button onclick="pay('${id}')">Pay</button>` : "")}</td>
+            </tr>
+          `;
+        }).join("")}
+      </table>
+
+      ${isAdmin ? `<button class="add-button" onclick="removeBorrower('${id}')">Delete</button>` : ""}
+    `;
+
+    list.appendChild(card);
+  });
+}
+
+/* PAY */
+function pay(id){
+  borrowersRef.child(id).once("value", snap=>{
+    borrowersRef.child(id).update({ paid: snap.val().paid + 1 });
+  });
+}
+
+/* DELETE */
+function removeBorrower(id){
+  if(confirm("Delete borrower?")){
+    borrowersRef.child(id).remove();
+  }
+}
+</script>
+
+</body>
+</html>
